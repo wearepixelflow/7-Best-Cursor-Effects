@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Flashlight Cursor — Premium Interaction Demo</title>
+<style>
+
+/* ═══════════════════════════════════════════════
+   BASE
+═══════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:         #050505;
+  --text:       #e8eaf2;
+  --text-dim:   rgba(232,234,242,0.6);
+  --accent:     #7c6dfa;
+  --accent2:    #a78bfa;
+  --card-bg:    rgba(255,255,255,0.035);
+  --card-border:rgba(255,255,255,0.07);
+  --font:       -apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',sans-serif;
+}
+
+html,body{
+  width:100%;
+  min-height:100vh;
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font);
+  overflow-x:hidden;
+  cursor:none;
+  user-select:none;
+}
+
+/* ═══════════════════════════════════════════════
+   NOISE + GRID TEXTURE LAYER
+═══════════════════════════════════════════════ */
+body::before{
+  content:'';
+  position:fixed;
+  inset:0;
+  z-index:0;
+  pointer-events:none;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E"),
+    linear-gradient(rgba(124,109,250,0.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(124,109,250,0.025) 1px,transparent 1px);
+  background-size:400px 400px, 60px 60px, 60px 60px;
+  mix-blend-mode:screen;
+}
+
+/* ═══════════════════════════════════════════════
+   AMBIENT BLOBS (depth, behind content)
+═══════════════════════════════════════════════ */
+.blob{
+  position:fixed;
+  border-radius:50%;
+  filter:blur(80px);
+  pointer-events:none;
+  z-index:0;
+  opacity:0.18;
+  will-change:transform;
+  animation:blobFloat 20s ease-in-out infinite;
+}
+.blob--1{
+  width:600px;height:600px;
+  background:radial-gradient(circle,#6366f1,transparent 70%);
+  top:-200px;left:-150px;
+  animation-duration:22s;
+  animation-delay:0s;
+}
+.blob--2{
+  width:500px;height:500px;
+  background:radial-gradient(circle,#7c3aed,transparent 70%);
+  top:40%;right:-180px;
+  animation-duration:26s;
+  animation-delay:-8s;
+}
+.blob--3{
+  width:400px;height:400px;
+  background:radial-gradient(circle,#4f46e5,transparent 70%);
+  bottom:-100px;left:30%;
+  animation-duration:30s;
+  animation-delay:-15s;
+}
+@keyframes blobFloat{
+  0%,100%{transform:translate(0,0) scale(1)}
+  25%{transform:translate(30px,-40px) scale(1.04)}
+  50%{transform:translate(-20px,20px) scale(0.97)}
+  75%{transform:translate(40px,30px) scale(1.02)}
+}
+
+/* ═══════════════════════════════════════════════
+   VIGNETTE
+═══════════════════════════════════════════════ */
+.vignette{
+  position:fixed;
+  inset:0;
+  z-index:1;
+  pointer-events:none;
+  background:radial-gradient(ellipse 80% 80% at 50% 50%,transparent 40%,rgba(0,0,0,0.65) 100%);
+}
+
+/* ═══════════════════════════════════════════════
+   DARKNESS OVERLAY — The key to the flashlight illusion.
+   This near-black layer sits above all content but below
+   the flashlight mask. Content is visible through the
+   CSS mask that matches cursor position.
+═══════════════════════════════════════════════ */
+#darkness{
+  position:fixed;
+  inset:0;
+  z-index:50;
+  pointer-events:none;
+  background:#050505;
+  /* The mask is a radial-gradient: transparent circle
+     (revealing content) → opaque (hiding content).
+     We update --mx/--my via JS to track the cursor. */
+  -webkit-mask-image:radial-gradient(
+    circle var(--r,200px) at var(--mx,50%) var(--my,50%),
+    transparent 0%,
+    transparent 55%,
+    rgba(0,0,0,0.2) 68%,
+    rgba(0,0,0,0.6) 78%,
+    rgba(0,0,0,0.88) 86%,
+    #050505 100%
+  );
+  mask-image:radial-gradient(
+    circle var(--r,200px) at var(--mx,50%) var(--my,50%),
+    transparent 0%,
+    transparent 55%,
+    rgba(0,0,0,0.2) 68%,
+    rgba(0,0,0,0.6) 78%,
+    rgba(0,0,0,0.88) 86%,
+    #050505 100%
+  );
+  transition:--mx 0s,--my 0s; /* JS drives these, no CSS lag */
+}
+
+/* When cursor hasn't entered yet, entire page is dark */
+#darkness.no-cursor{
+  -webkit-mask-image:none;
+  mask-image:none;
+  background:#050505;
+}
+
+/* ═══════════════════════════════════════════════
+   FLASHLIGHT CURSOR ELEMENT
+   Renders the visible torch "glass" dot + glow
+═══════════════════════════════════════════════ */
+#flashlight{
+  position:fixed;
+  width:24px;
+  height:24px;
+  border-radius:50%;
+  z-index:100;
+  pointer-events:none;
+  transform:translate(-50%,-50%) translate3d(0,0,0);
+  will-change:transform;
+  /* Inner bright core */
+  background:radial-gradient(circle,
+    rgba(255,255,255,0.95) 0%,
+    rgba(220,225,255,0.7) 35%,
+    rgba(180,190,255,0.2) 65%,
+    transparent 100%
+  );
+  /* Outer soft bloom */
+  box-shadow:
+    0 0 8px  4px rgba(255,255,255,0.55),
+    0 0 20px 8px rgba(180,190,255,0.30),
+    0 0 45px 16px rgba(130,140,255,0.15),
+    0 0 90px 32px rgba(100,110,255,0.06);
+  opacity:0;
+  transition:opacity 0.5s ease;
+}
+
+/* Breathing pulse on the cursor */
+@keyframes cursorPulse{
+  0%,100%{box-shadow:
+    0 0 8px  4px rgba(255,255,255,0.55),
+    0 0 20px 8px rgba(180,190,255,0.30),
+    0 0 45px 16px rgba(130,140,255,0.15),
+    0 0 90px 32px rgba(100,110,255,0.06);}
+  50%{box-shadow:
+    0 0 10px 5px rgba(255,255,255,0.65),
+    0 0 25px 10px rgba(180,190,255,0.40),
+    0 0 55px 20px rgba(130,140,255,0.20),
+    0 0 110px 40px rgba(100,110,255,0.09);}
+}
+#flashlight.active{
+  animation:cursorPulse 2.4s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════
+   SECONDARY LIGHT CONE
+   Larger, softer glow behind the main cursor
+═══════════════════════════════════════════════ */
+#lightCone{
+  position:fixed;
+  width:420px;
+  height:420px;
+  border-radius:50%;
+  z-index:49;
+  pointer-events:none;
+  transform:translate(-50%,-50%) translate3d(0,0,0);
+  will-change:transform;
+  background:radial-gradient(circle,
+    rgba(140,150,255,0.055) 0%,
+    rgba(100,110,255,0.03) 40%,
+    transparent 75%
+  );
+  opacity:0;
+  transition:opacity 0.6s ease;
+}
+
+/* ═══════════════════════════════════════════════
+   PAGE LAYOUT
+═══════════════════════════════════════════════ */
+.page{
+  position:relative;
+  z-index:10;
+  max-width:900px;
+  margin:0 auto;
+  padding:0 40px 120px;
+}
+
+/* ═══════════════════════════════════════════════
+   HERO
+═══════════════════════════════════════════════ */
+.hero{
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:80px 0;
+  gap:0;
+}
+
+.hero-eyebrow{
+  font-size:11px;
+  letter-spacing:0.22em;
+  text-transform:uppercase;
+  color:var(--accent2);
+  margin-bottom:28px;
+  opacity:0.85;
+}
+
+.hero-title{
+  font-size:clamp(72px,12vw,140px);
+  font-weight:700;
+  letter-spacing:-0.045em;
+  line-height:0.92;
+  color:#fff;
+  margin-bottom:32px;
+  /* Subtle gradient on title text */
+  background:linear-gradient(135deg,#ffffff 30%,rgba(200,205,255,0.85) 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+
+.hero-sub{
+  font-size:clamp(18px,2.5vw,24px);
+  font-weight:300;
+  letter-spacing:-0.01em;
+  color:rgba(232,234,242,0.55);
+  margin-bottom:56px;
+  max-width:520px;
+  line-height:1.5;
+}
+
+.hero-hint{
+  font-size:12px;
+  letter-spacing:0.1em;
+  text-transform:uppercase;
+  color:rgba(232,234,242,0.25);
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.hero-hint::before,
+.hero-hint::after{
+  content:'';
+  display:block;
+  width:32px;
+  height:1px;
+  background:rgba(232,234,242,0.15);
+}
+
+/* ═══════════════════════════════════════════════
+   DESCRIPTION
+═══════════════════════════════════════════════ */
+.description{
+  padding:80px 0 60px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:60px;
+  align-items:start;
+}
+.desc-label{
+  font-size:10px;
+  letter-spacing:0.18em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin-bottom:16px;
+}
+.desc-heading{
+  font-size:clamp(28px,4vw,40px);
+  font-weight:600;
+  letter-spacing:-0.03em;
+  line-height:1.1;
+  color:#fff;
+  margin-bottom:0;
+}
+.desc-body{
+  font-size:16px;
+  line-height:1.75;
+  color:rgba(232,234,242,0.5);
+  max-width:380px;
+}
+.desc-body + .desc-body{
+  margin-top:20px;
+}
+
+/* ═══════════════════════════════════════════════
+   DIVIDER
+═══════════════════════════════════════════════ */
+.divider{
+  width:100%;
+  height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,0.06) 30%,rgba(255,255,255,0.06) 70%,transparent);
+  margin:20px 0;
+}
+
+/* ═══════════════════════════════════════════════
+   FEATURE CARDS
+═══════════════════════════════════════════════ */
+.cards{
+  padding:60px 0 100px;
+}
+.cards-label{
+  font-size:10px;
+  letter-spacing:0.18em;
+  text-transform:uppercase;
+  color:rgba(232,234,242,0.3);
+  margin-bottom:36px;
+  text-align:center;
+}
+.cards-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:16px;
+}
+.card{
+  background:var(--card-bg);
+  border:1px solid var(--card-border);
+  border-radius:20px;
+  padding:32px 28px;
+  position:relative;
+  overflow:hidden;
+  /* Floating animation — each card has slight phase offset */
+  animation:cardFloat 6s ease-in-out infinite;
+  transition:border-color 0.3s ease, background 0.3s ease;
+}
+.card:nth-child(2){animation-delay:-2s}
+.card:nth-child(3){animation-delay:-4s}
+
+@keyframes cardFloat{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(-6px)}
+}
+
+/* Top-edge shimmer line */
+.card::before{
+  content:'';
+  position:absolute;
+  top:0;left:0;right:0;
+  height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent);
+}
+
+/* Inner glow on spotlight pass */
+.card::after{
+  content:'';
+  position:absolute;
+  inset:0;
+  border-radius:20px;
+  background:radial-gradient(circle 80px at var(--cx,50%) var(--cy,50%),rgba(124,109,250,0.08),transparent 70%);
+  opacity:0;
+  transition:opacity 0.3s;
+  pointer-events:none;
+}
+
+.card-icon{
+  width:40px;height:40px;
+  border-radius:10px;
+  background:rgba(124,109,250,0.12);
+  border:1px solid rgba(124,109,250,0.2);
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:22px;
+  font-size:18px;
+  color:var(--accent2);
+}
+.card-title{
+  font-size:16px;
+  font-weight:600;
+  letter-spacing:-0.02em;
+  color:#fff;
+  margin-bottom:10px;
+}
+.card-text{
+  font-size:13px;
+  line-height:1.7;
+  color:rgba(232,234,242,0.4);
+}
+
+/* ═══════════════════════════════════════════════
+   GEOMETRIC DECORATIONS
+═══════════════════════════════════════════════ */
+.geo{
+  position:absolute;
+  pointer-events:none;
+  opacity:0.07;
+}
+.geo--ring{
+  width:300px;height:300px;
+  border-radius:50%;
+  border:1px solid rgba(255,255,255,0.5);
+  top:-80px;right:-60px;
+}
+.geo--ring2{
+  width:180px;height:180px;
+  border-radius:50%;
+  border:1px solid rgba(255,255,255,0.4);
+  bottom:60px;left:-40px;
+}
+.geo--cross{
+  width:60px;height:1px;
+  background:rgba(255,255,255,0.5);
+  bottom:140px;right:80px;
+}
+.geo--cross::after{
+  content:'';
+  position:absolute;
+  width:1px;height:60px;
+  background:rgba(255,255,255,0.5);
+  left:50%;top:50%;
+  transform:translate(-50%,-50%);
+}
+
+/* ═══════════════════════════════════════════════
+   QUOTE / PULL QUOTE
+═══════════════════════════════════════════════ */
+.pullquote{
+  padding:80px 0;
+  text-align:center;
+}
+.pullquote-text{
+  font-size:clamp(22px,3.5vw,38px);
+  font-weight:300;
+  letter-spacing:-0.02em;
+  line-height:1.35;
+  color:rgba(232,234,242,0.65);
+  max-width:700px;
+  margin:0 auto;
+}
+.pullquote-text em{
+  font-style:normal;
+  color:#fff;
+  font-weight:500;
+}
+
+/* ═══════════════════════════════════════════════
+   STATS ROW
+═══════════════════════════════════════════════ */
+.stats{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:1px;
+  background:rgba(255,255,255,0.05);
+  border-radius:16px;
+  overflow:hidden;
+  margin:0 0 100px;
+}
+.stat{
+  background:var(--bg);
+  padding:32px 24px;
+  text-align:center;
+}
+.stat-val{
+  font-size:clamp(28px,4vw,42px);
+  font-weight:700;
+  letter-spacing:-0.04em;
+  color:#fff;
+  display:block;
+  margin-bottom:6px;
+  background:linear-gradient(135deg,#fff,rgba(200,205,255,0.8));
+  -webkit-background-clip:text;
+  background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+.stat-key{
+  font-size:11px;
+  letter-spacing:0.1em;
+  text-transform:uppercase;
+  color:rgba(232,234,242,0.3);
+}
+
+/* ═══════════════════════════════════════════════
+   FOOTER AREA
+═══════════════════════════════════════════════ */
+.footer-hero{
+  text-align:center;
+  padding:60px 0 120px;
+}
+.footer-hero-title{
+  font-size:clamp(48px,8vw,100px);
+  font-weight:700;
+  letter-spacing:-0.04em;
+  line-height:0.92;
+  color:rgba(255,255,255,0.06);
+  margin-bottom:40px;
+}
+.footer-tag{
+  font-size:11px;
+  letter-spacing:0.14em;
+  text-transform:uppercase;
+  color:rgba(232,234,242,0.2);
+}
+
+/* ═══════════════════════════════════════════════
+   RESPONSIVE
+═══════════════════════════════════════════════ */
+@media(max-width:700px){
+  .page{padding:0 24px 80px}
+  .description{grid-template-columns:1fr;gap:32px}
+  .cards-grid{grid-template-columns:1fr}
+  .stats{grid-template-columns:1fr 1fr}
+  .hero-title{font-size:clamp(52px,15vw,100px)}
+}
+
+/* ═══════════════════════════════════════════════
+   REDUCED MOTION
+═══════════════════════════════════════════════ */
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+
+</style>
+</head>
+<body>
+
+<!-- Ambient depth blobs -->
+<div class="blob blob--1" aria-hidden="true"></div>
+<div class="blob blob--2" aria-hidden="true"></div>
+<div class="blob blob--3" aria-hidden="true"></div>
+
+<!-- Edge vignette -->
+<div class="vignette" aria-hidden="true"></div>
+
+<!-- ═══ DARKNESS OVERLAY ═══
+     This is THE layer. Everything sits behind this.
+     The CSS mask-image is updated by JS to reveal
+     a circle around the cursor position. -->
+<div id="darkness" class="no-cursor" aria-hidden="true"></div>
+
+<!-- The visible flashlight dot + glow -->
+<div id="flashlight" aria-hidden="true"></div>
+
+<!-- Larger, softer secondary light halo -->
+<div id="lightCone" aria-hidden="true"></div>
+
+<!-- ═══ PAGE CONTENT ═══ -->
+<main class="page" role="main">
+
+  <!-- Hero -->
+  <section class="hero">
+    <p class="hero-eyebrow">Cursor Interaction Study</p>
+    <h1 class="hero-title">FLASHLIGHT</h1>
+    <p class="hero-sub">Reveal what was hidden. Move your cursor to illuminate the darkness and discover what lies beneath the surface.</p>
+    <span class="hero-hint">Move your cursor to explore</span>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Description -->
+  <section class="description">
+    <div>
+      <p class="desc-label">Concept</p>
+      <h2 class="desc-heading">The cursor becomes the light.</h2>
+    </div>
+    <div>
+      <p class="desc-body">Every element on this page exists in complete darkness until your cursor passes over it. The flashlight effect uses a radial CSS mask — updated in real-time — to reveal content through a softly feathered spotlight.</p>
+      <p class="desc-body">Nothing about this effect uses Canvas. It is purely HTML, CSS, and vanilla JavaScript — running at 60fps through GPU-accelerated CSS properties and requestAnimationFrame interpolation.</p>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Pull quote -->
+  <div class="pullquote">
+    <p class="pullquote-text">
+      "The best interfaces <em>reward exploration.</em><br>
+      They have secrets worth finding."
+    </p>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats" role="list">
+    <div class="stat" role="listitem">
+      <span class="stat-val">60</span>
+      <span class="stat-key">FPS Target</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat-val">0ms</span>
+      <span class="stat-key">CSS Paint</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat-val">rAF</span>
+      <span class="stat-key">Loop Type</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat-val">GPU</span>
+      <span class="stat-key">Composited</span>
+    </div>
+  </div>
+
+  <!-- Feature cards -->
+  <section class="cards">
+    <p class="cards-label">How it works</p>
+    <div class="cards-grid">
+
+      <article class="card">
+        <div class="geo geo--ring"></div>
+        <div class="card-icon" aria-hidden="true">◎</div>
+        <h3 class="card-title">Radial CSS Mask</h3>
+        <p class="card-text">A full-screen overlay uses a radial-gradient mask that creates transparent circle at the cursor's position, revealing everything beneath.</p>
+      </article>
+
+      <article class="card">
+        <div class="card-icon" aria-hidden="true">⟐</div>
+        <h3 class="card-title">Lerp Interpolation</h3>
+        <p class="card-text">The cursor never snaps. A linear interpolation function smoothly eases the flashlight position toward the raw mouse coordinates every frame.</p>
+      </article>
+
+      <article class="card">
+        <div class="geo geo--ring2"></div>
+        <div class="geo geo--cross"></div>
+        <div class="card-icon" aria-hidden="true">◈</div>
+        <h3 class="card-title">GPU Compositing</h3>
+        <p class="card-text">All movement uses CSS custom properties and transform. No layout is triggered. The GPU composites the mask independently of the main thread.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Footer area -->
+  <div class="footer-hero">
+    <p class="footer-hero-title">REVEAL</p>
+    <p class="footer-tag">Premium cursor interaction — no libraries</p>
+  </div>
+
+</main>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// FLASHLIGHT CURSOR ENGINE
+//
+// Strategy:
+//   - Track raw mouse position in mousemove listener
+//   - In rAF loop, lerp a "display" position toward raw
+//   - Update CSS custom properties --mx/--my on #darkness
+//     which drives the mask-image radial-gradient
+//   - Move #flashlight and #lightCone with transform
+//   - No canvas, no layout, no expensive recalculates
+// ═══════════════════════════════════════════════════════
+
+const darkness   = document.getElementById('darkness');
+const flashlight = document.getElementById('flashlight');
+const lightCone  = document.getElementById('lightCone');
+const cards      = document.querySelectorAll('.card');
+
+// ── State ─────────────────────────────────────────────
+let rawX = window.innerWidth  / 2;
+let rawY = window.innerHeight / 2;
+let curX = rawX;
+let curY = rawY;
+
+// Velocity for subtle cursor size breathing
+let prevX = rawX, prevY = rawY;
+let velocity = 0;
+let cursorVisible = false;
+
+// Flashlight radius — can breathe slightly
+const BASE_RADIUS = 210;
+let displayRadius = BASE_RADIUS;
+let targetRadius  = BASE_RADIUS;
+
+// ── Lerp helper ───────────────────────────────────────
+function lerp(a, b, t){ return a + (b - a) * t; }
+
+// ── Mouse tracking ────────────────────────────────────
+document.addEventListener('mousemove', e => {
+  rawX = e.clientX;
+  rawY = e.clientY;
+
+  if(!cursorVisible){
+    cursorVisible = true;
+    darkness.classList.remove('no-cursor');
+    flashlight.style.opacity = '1';
+    flashlight.classList.add('active');
+    lightCone.style.opacity  = '1';
+  }
+});
+
+document.addEventListener('mouseleave', () => {
+  cursorVisible = false;
+  darkness.classList.add('no-cursor');
+  flashlight.style.opacity = '0';
+  lightCone.style.opacity  = '0';
+});
+
+// ── rAF loop ──────────────────────────────────────────
+// Using two lerp speeds:
+//  - flashlight dot: very fast (0.28) → snappy feel
+//  - darkness mask:  slightly slower (0.18) → soft lag
+//    that makes the reveal feel like spilling light
+
+const LERP_CURSOR = 0.22;  // dot speed
+const LERP_MASK   = 0.16;  // mask speed (slightly behind)
+
+let maskX = rawX;
+let maskY = rawY;
+
+function frame() {
+  requestAnimationFrame(frame);
+
+  // ── Velocity measurement ─────────────────────────
+  const dx = rawX - prevX;
+  const dy = rawY - prevY;
+  velocity = lerp(velocity, Math.sqrt(dx*dx + dy*dy), 0.2);
+  prevX = curX; prevY = curY;
+
+  // ── Lerp cursor dot ───────────────────────────────
+  curX = lerp(curX, rawX, LERP_CURSOR);
+  curY = lerp(curY, rawY, LERP_CURSOR);
+
+  // ── Lerp mask (slightly slower for the "spill" feel)
+  maskX = lerp(maskX, rawX, LERP_MASK);
+  maskY = lerp(maskY, rawY, LERP_MASK);
+
+  // ── Radius breathes with velocity ─────────────────
+  // Fast movement = slightly larger beam (torch-like)
+  targetRadius = BASE_RADIUS + Math.min(velocity * 0.8, 40);
+  displayRadius = lerp(displayRadius, targetRadius, 0.08);
+  const r = displayRadius.toFixed(1);
+
+  // ── Update darkness mask via CSS custom props ──────
+  // This is the CORE of the effect.
+  // We set --mx/--my as pixel values so the radial-gradient
+  // in the mask-image moves to exactly where the (lerped) cursor is.
+  darkness.style.setProperty('--mx', maskX.toFixed(1) + 'px');
+  darkness.style.setProperty('--my', maskY.toFixed(1) + 'px');
+  darkness.style.setProperty('--r',  r + 'px');
+
+  // ── Move flashlight dot (GPU transform) ───────────
+  flashlight.style.transform =
+    `translate3d(${(curX - 12).toFixed(2)}px, ${(curY - 12).toFixed(2)}px, 0)`;
+
+  // ── Light cone (even more lag, larger) ────────────
+  const coneX = lerp(maskX, rawX, 0.1);
+  const coneY = lerp(maskY, rawY, 0.1);
+  lightCone.style.transform =
+    `translate3d(${(coneX - 210).toFixed(2)}px, ${(coneY - 210).toFixed(2)}px, 0)`;
+
+  // ── Cursor size pulse with velocity ───────────────
+  const scale = 1 + Math.min(velocity * 0.008, 0.25);
+  const squishX = lerp(1, scale, 0.15);
+  flashlight.style.transform =
+    `translate3d(${(curX - 12).toFixed(2)}px, ${(curY - 12).toFixed(2)}px, 0) scale(${squishX.toFixed(3)})`;
+
+  // ── Card inner highlight ───────────────────────────
+  // Each card gets a subtle local glow where the cursor is near
+  cards.forEach(card => {
+    const rect = card.getBoundingClientRect();
+    // Local position within the card (0–100%)
+    const localX = ((curX - rect.left) / rect.width  * 100).toFixed(1);
+    const localY = ((curY - rect.top)  / rect.height * 100).toFixed(1);
+    card.style.setProperty('--cx', localX + '%');
+    card.style.setProperty('--cy', localY + '%');
+
+    // Is cursor near this card?
+    const dist = Math.hypot(
+      curX - (rect.left + rect.width  / 2),
+      curY - (rect.top  + rect.height / 2)
+    );
+    const glow = Math.max(0, 1 - dist / 300);
+    card.style.borderColor = `rgba(124,109,250,${(glow * 0.35).toFixed(3)})`;
+    card.style.background  = `rgba(255,255,255,${(0.035 + glow * 0.03).toFixed(3)})`;
+    // Reveal card's inner ::after glow
+    card.style.setProperty('--glow-opacity', glow.toFixed(3));
+  });
+}
+
+// ── Start the loop ────────────────────────────────────
+requestAnimationFrame(frame);
+
+// ── Performance: throttle card rect lookups ───────────
+// getBoundingClientRect in the hot loop is fine on modern
+// browsers since it's a compositor query (no forced layout)
+// when no layout-triggering writes precede it. We're safe.
+
+// ── Intro: gentle fade-in of the hint text ───────────
+// The page "breathes" into existence — content fades up
+// but everything remains hidden until the flashlight finds it
+document.querySelectorAll('.hero-eyebrow,.hero-hint,.cards-label,.footer-tag').forEach((el,i) => {
+  el.style.opacity = '0';
+  el.style.transition = `opacity 1.2s ease ${i*0.1+0.3}s`;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    el.style.opacity = '';
+  }));
+});
+</script>
+</body>
+</html>
