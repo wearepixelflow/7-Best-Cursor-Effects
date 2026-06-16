@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Magnetic Trail</title>
+  <style>
+    /* ─── Reset & Base ─────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #050505;
+  --text-primary: #f0f0f0;
+  --text-muted: rgba(255, 255, 255, 0.35);
+  --border: rgba(255, 255, 255, 0.07);
+  --card-bg: rgba(255, 255, 255, 0.03);
+  --font-display: 'Georgia', 'Times New Roman', serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  cursor: none; /* hide default cursor — the trail is your cursor */
+  overflow-x: hidden;
+}
+
+/* ─── Canvas ────────────────────────────────────────────────── */
+#trailCanvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;          /* behind all content */
+  pointer-events: none; /* never intercepts clicks */
+  display: block;
+}
+
+/* ─── Page Content ──────────────────────────────────────────── */
+.content {
+  position: relative;
+  z-index: 10;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+/* ─── Hero ──────────────────────────────────────────────────── */
+.hero {
+  padding: 18vh 0 10vh;
+}
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+}
+
+h1 {
+  font-family: var(--font-display);
+  font-size: clamp(42px, 7vw, 88px);
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin-bottom: 32px;
+}
+
+h1 em {
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.sub {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  max-width: 460px;
+}
+
+/* ─── Cards ─────────────────────────────────────────────────── */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 18vh;
+}
+
+.card {
+  background: var(--card-bg);
+  padding: 28px 28px 32px;
+  transition: background 240ms ease;
+}
+
+.card:hover {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.card-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.card p {
+  font-size: 14px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ─── Reduced motion ─────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  #trailCanvas { display: none; }
+}
+  </style>
+</head>
+<body>
+
+  <!-- Full-screen canvas rendered behind all page content -->
+  <canvas id="trailCanvas"></canvas>
+
+  <!-- Page content sits above the canvas via z-index -->
+  <main class="content">
+    <div class="hero">
+      <p class="eyebrow">Interactive experience</p>
+      <h1>Move your cursor.<br>Watch it leave<br><em>something behind.</em></h1>
+      <p class="sub">A premium mouse trail built with HTML5 Canvas — smooth, colorful, and alive.</p>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <span class="card-label">Technique</span>
+        <p>Bézier curves drawn between 50 historical cursor points for fluid, organic motion.</p>
+      </div>
+      <div class="card">
+        <span class="card-label">Color</span>
+        <p>Dynamic gradient shifting through blue → cyan → purple → pink over time.</p>
+      </div>
+      <div class="card">
+        <span class="card-label">Performance</span>
+        <p>requestAnimationFrame loop at 60 FPS. Zero external dependencies.</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ─────────────────────────────────────────────────────────────────────────────
+// MOUSE TRAIL — Premium canvas effect
+// Architecture:
+//   1. Setup      — canvas, resize handling
+//   2. State      — history ring-buffer, mouse tracking
+//   3. Colors     — time-shifting gradient palette
+//   4. Rendering  — Bézier curves + arc dots + glow
+//   5. Loop       — requestAnimationFrame orchestration
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── 1. SETUP ────────────────────────────────────────────────────────────────
+
+const canvas = document.getElementById('trailCanvas');
+const ctx    = canvas.getContext('2d');
+
+// How many cursor positions we remember.
+// More = longer trail; fewer = snappier/shorter.
+const HISTORY_LENGTH = 52;
+
+// Max line width at the head of the trail (tapers to 0 at the tail).
+const MAX_LINE_WIDTH = 3.2;
+
+// Shadow blur for the soft glow layer.
+const GLOW_BLUR = 18;
+
+// Resize the canvas pixel buffer to match the display size.
+function resize() {
+  // Use devicePixelRatio for crisp rendering on HiDPI screens.
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = window.innerWidth  * dpr;
+  canvas.height = window.innerHeight * dpr;
+  ctx.scale(dpr, dpr);
+}
+
+resize();
+window.addEventListener('resize', resize);
+
+// ─── 2. STATE ────────────────────────────────────────────────────────────────
+
+// Ring buffer of {x, y} objects, newest at the end.
+const history = [];
+
+// Raw mouse coordinates (CSS pixels).
+let mouseX = window.innerWidth  / 2;
+let mouseY = window.innerHeight / 2;
+
+// Smoothed/eased position the trail actually follows.
+// Lagging slightly behind the real cursor gives the elastic feel.
+let easedX = mouseX;
+let easedY = mouseY;
+
+// Easing factor: lower = more lag, higher = snappier.
+// 0.12–0.22 is the sweet spot for "premium elastic."
+const EASE = 0.15;
+
+// Whether the mouse has moved at all (avoid drawing on load).
+let active = false;
+
+document.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  active = true;
+});
+
+// ─── 3. COLORS ───────────────────────────────────────────────────────────────
+
+// Color stops for the trail gradient.
+// These are HSL hue values that will shift over time.
+// The gradient runs from the HEAD (newest point) to the TAIL (oldest).
+//
+// Palette journey: electric blue → cyan → violet → pink → magenta
+const BASE_HUES = [210, 185, 270, 310, 340];
+
+// How fast the palette drifts over time (degrees per second).
+const HUE_DRIFT_SPEED = 18;
+
+// Current hue offset driven by elapsed time.
+let hueOffset = 0;
+let lastTime   = performance.now();
+
+// Build a CSS colour string for a given stop index and alpha.
+function getColor(stopIndex, alpha, totalStops) {
+  const t      = stopIndex / (totalStops - 1);            // 0 → 1 along trail
+  const spread = BASE_HUES[BASE_HUES.length - 1] - BASE_HUES[0]; // hue range
+  const hue    = BASE_HUES[0] + t * spread + hueOffset;
+  const sat    = 85 + t * 10;                             // more saturated at tail
+  const lit    = 58 + t * 8;                              // slightly lighter at tail
+  return `hsla(${hue}, ${sat}%, ${lit}%, ${alpha})`;
+}
+
+// ─── 4. RENDERING ────────────────────────────────────────────────────────────
+
+function draw() {
+  // Clear the entire canvas each frame.
+  // Using clearRect (not fillRect) keeps the background transparent so
+  // the CSS background-color (#050505) shows through properly.
+  ctx.clearRect(0, 0, canvas.width / (window.devicePixelRatio || 1),
+                      canvas.height / (window.devicePixelRatio || 1));
+
+  const n = history.length;
+  if (n < 3) return; // Need at least 3 points for smooth curves.
+
+  // ── 4a. Glow pass (blurred, wide, lower alpha) ──────────────────────────
+  // Drawing the trail twice — once blurred (glow) then once sharp (crisp line)
+  // gives the soft luminous look without a filter that affects the whole canvas.
+  ctx.save();
+  ctx.shadowBlur  = GLOW_BLUR;
+  ctx.shadowColor = getColor(0, 0.6, n);
+  drawTrailPath(n, 0.35, MAX_LINE_WIDTH * 2.4);
+  ctx.restore();
+
+  // ── 4b. Main trail pass (sharp, full colour) ────────────────────────────
+  ctx.save();
+  ctx.shadowBlur = 0;
+  drawTrailPath(n, 1.0, MAX_LINE_WIDTH);
+  ctx.restore();
+
+  // ── 4c. Arc dots along the trail ────────────────────────────────────────
+  // Small circles at every 4th point add a beaded, jewelled texture.
+  drawDots(n);
+
+  // ── 4d. Cursor dot ──────────────────────────────────────────────────────
+  // A bright circle at the very tip replaces the hidden system cursor.
+  drawCursorDot();
+}
+
+// Draw the Bézier-smoothed spine of the trail.
+// `alphaScale` dims the stroke; `widthScale` controls thickness at the head.
+function drawTrailPath(n, alphaScale, widthScale) {
+
+  // Build a linear gradient along the trail from point 0 (tail) to point n-1 (head).
+  const tail = history[0];
+  const head = history[n - 1];
+  const grad = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
+
+  for (let i = 0; i < n; i++) {
+    const t     = i / (n - 1);           // 0 at tail, 1 at head
+    const alpha = t * alphaScale;        // fade to invisible at tail
+    grad.addColorStop(t, getColor(i, alpha, n));
+  }
+
+  ctx.beginPath();
+  ctx.strokeStyle = grad;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+
+  // Walk the history and draw quadratic Bézier curves between midpoints.
+  // This avoids sharp corners that straight lineTo() segments would create.
+  ctx.moveTo(history[0].x, history[0].y);
+
+  for (let i = 1; i < n - 1; i++) {
+    const t     = i / (n - 1);
+    const width = t * widthScale;        // taper: thinnest at tail, widest at head
+
+    ctx.lineWidth = Math.max(0.3, width);
+
+    // Midpoint between current and next point — the Bézier control scheme.
+    const mx = (history[i].x + history[i + 1].x) / 2;
+    const my = (history[i].y + history[i + 1].y) / 2;
+
+    // Each sub-segment is stroked individually so we can vary lineWidth.
+    ctx.quadraticCurveTo(history[i].x, history[i].y, mx, my);
+
+    // Stroke each segment individually for progressive width tapering.
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(mx, my);
+  }
+
+  // Final segment to the last point.
+  ctx.lineTo(history[n - 1].x, history[n - 1].y);
+  ctx.stroke();
+}
+
+// Draw small dots at sampled points along the trail for a beaded texture.
+function drawDots(n) {
+  const step = 4; // sample every Nth point
+  for (let i = step; i < n; i += step) {
+    const t      = i / (n - 1);
+    const alpha  = t * 0.7;
+    const radius = t * 2.0;   // dots also taper toward the tail
+
+    ctx.beginPath();
+    ctx.arc(history[i].x, history[i].y, Math.max(0.5, radius), 0, Math.PI * 2);
+    ctx.fillStyle = getColor(i, alpha, n);
+
+    // Mild glow on each dot.
+    ctx.shadowBlur  = 8;
+    ctx.shadowColor = getColor(i, 0.5, n);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+// A bright circle at the eased cursor position replaces the hidden OS cursor.
+function drawCursorDot() {
+  const x = easedX, y = easedY;
+
+  // Outer soft ring.
+  ctx.beginPath();
+  ctx.arc(x, y, 7, 0, Math.PI * 2);
+  ctx.strokeStyle = getColor(history.length - 1, 0.5, history.length || 1);
+  ctx.lineWidth   = 1;
+  ctx.shadowBlur  = 12;
+  ctx.shadowColor = getColor(0, 0.8, 1);
+  ctx.stroke();
+  ctx.shadowBlur  = 0;
+
+  // Inner filled dot.
+  ctx.beginPath();
+  ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+}
+
+// ─── 5. ANIMATION LOOP ───────────────────────────────────────────────────────
+
+function loop(now) {
+  requestAnimationFrame(loop);
+
+  if (!active) return;
+
+  // ── Advance time-based hue drift ──────────────────────────────────────────
+  const dt   = (now - lastTime) / 1000; // seconds since last frame
+  lastTime   = now;
+  hueOffset += HUE_DRIFT_SPEED * dt;
+  if (hueOffset > 360) hueOffset -= 360;
+
+  // ── Ease the drawn position toward the real mouse position ────────────────
+  // lerp: current + (target - current) * factor
+  easedX += (mouseX - easedX) * EASE;
+  easedY += (mouseY - easedY) * EASE;
+
+  // ── Push current eased position into the history buffer ───────────────────
+  history.push({ x: easedX, y: easedY });
+
+  // Trim to the fixed history length (oldest point falls off the tail).
+  if (history.length > HISTORY_LENGTH) {
+    history.shift();
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  draw();
+}
+
+requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
