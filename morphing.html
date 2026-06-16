@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Morphing Cursor Container</title>
+  <style>
+    /* ============================================================
+       RESET & BASE
+    ============================================================ */
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg:            #09090B;
+      --surface:       rgba(255,255,255,0.04);
+      --surface-hover: rgba(255,255,255,0.07);
+      --border:        rgba(255,255,255,0.08);
+      --border-hover:  rgba(255,255,255,0.18);
+      --text-primary:  #F4F4F5;
+      --text-secondary:#A1A1AA;
+      --text-muted:    #52525B;
+      --accent:        rgba(255,255,255,0.9);
+      --glow:          rgba(255,255,255,0.06);
+      --cursor-color:  rgba(255,255,255,0.85);
+      --cursor-glow:   rgba(255,255,255,0.15);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-x: hidden;
+      cursor: none; /* Hide native cursor everywhere */
+    }
+
+    /* Subtle noise texture via SVG filter */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 200px 200px;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.5;
+    }
+
+    /* Radial glow behind content */
+    body::after {
+      content: '';
+      position: fixed;
+      top: 20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 600px;
+      background: radial-gradient(ellipse at center, rgba(120,120,200,0.07) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ============================================================
+       CURSOR SYSTEM
+    ============================================================ */
+    #cursor-root {
+      position: fixed;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      z-index: 99999;
+      will-change: transform;
+    }
+
+    /* The morphing glass layer */
+    #cursor-morph {
+      position: absolute;
+      top: 0;
+      left: 0;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.2);
+      backdrop-filter: blur(12px) saturate(1.5);
+      -webkit-backdrop-filter: blur(12px) saturate(1.5);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.05) inset,
+        0 4px 32px rgba(255,255,255,0.06),
+        0 0 60px rgba(200,200,255,0.04);
+      transform-origin: center center;
+      will-change: left, top, width, height, border-radius, opacity;
+    }
+
+    /* Center dot */
+    #cursor-dot {
+      position: absolute;
+      width: 5px;
+      height: 5px;
+      background: rgba(255,255,255,0.95);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 6px rgba(255,255,255,0.8);
+      will-change: transform, opacity;
+      transition: opacity 0.2s ease;
+    }
+
+    /* Glow ring */
+    #cursor-glow {
+      position: absolute;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
+      transform: translate(-50%, -50%);
+      will-change: left, top, width, height, opacity;
+      pointer-events: none;
+    }
+
+    /* ============================================================
+       LAYOUT WRAPPER
+    ============================================================ */
+    .page {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 40px 120px;
+    }
+
+    /* ============================================================
+       NAVIGATION
+    ============================================================ */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 28px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 120px;
+      cursor: none;
+    }
+
+    .nav-logo {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      color: var(--text-primary);
+      cursor: none;
+    }
+
+    .nav-logo span {
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      list-style: none;
+      cursor: none;
+    }
+
+    .nav-links li a {
+      display: block;
+      padding: 8px 16px;
+      font-size: 14px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-radius: 8px;
+      letter-spacing: -0.01em;
+      transition: color 0.2s ease;
+      cursor: none;
+    }
+
+    .nav-links li a:hover {
+      color: var(--text-primary);
+    }
+
+    .nav-cta {
+      font-size: 13px;
+      padding: 9px 20px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+      transition: background 0.2s ease, border-color 0.2s ease;
+      cursor: none;
+    }
+
+    .nav-cta:hover {
+      background: rgba(255,255,255,0.12);
+      border-color: var(--border-hover);
+    }
+
+    /* ============================================================
+       HERO SECTION
+    ============================================================ */
+    .hero {
+      text-align: center;
+      margin-bottom: 120px;
+      cursor: none;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 40px;
+      cursor: none;
+    }
+
+    .hero-badge::before {
+      content: '';
+      display: block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(120,200,120,0.8);
+      box-shadow: 0 0 6px rgba(120,200,120,0.6);
+    }
+
+    .hero h1 {
+      font-size: clamp(52px, 7vw, 88px);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.0;
+      margin-bottom: 28px;
+      background: linear-gradient(180deg, #FFFFFF 0%, rgba(255,255,255,0.55) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      cursor: none;
+    }
+
+    .hero h1 em {
+      font-style: italic;
+      font-weight: 300;
+    }
+
+    .hero p {
+      font-size: 18px;
+      color: var(--text-secondary);
+      max-width: 520px;
+      margin: 0 auto 48px;
+      line-height: 1.65;
+      letter-spacing: -0.01em;
+      cursor: none;
+    }
+
+    .hero-buttons {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      cursor: none;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      text-decoration: none;
+      cursor: none;
+      border: 1px solid transparent;
+      transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1),
+                  background 0.2s ease,
+                  box-shadow 0.2s ease,
+                  border-color 0.2s ease;
+    }
+
+    .btn-primary {
+      background: #fff;
+      color: #09090B;
+      border-color: rgba(255,255,255,0.9);
+    }
+
+    .btn-primary:hover {
+      background: rgba(255,255,255,0.92);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(255,255,255,0.15);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-secondary);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      color: var(--text-primary);
+      background: rgba(255,255,255,0.05);
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
+    }
+
+    /* ============================================================
+       SECTION LABELS
+    ============================================================ */
+    .section-label {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+    }
+
+    /* ============================================================
+       FEATURE CARDS
+    ============================================================ */
+    .section {
+      margin-bottom: 100px;
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      cursor: none;
+      transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1),
+                  background 0.2s ease,
+                  border-color 0.2s ease,
+                  box-shadow 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      background: var(--surface-hover);
+      border-color: var(--border-hover);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
+    }
+
+    .card-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      font-size: 20px;
+    }
+
+    .card h3 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+      color: var(--text-primary);
+    }
+
+    .card p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* ============================================================
+       PILL TAGS
+    ============================================================ */
+    .tags-section {
+      margin-bottom: 100px;
+    }
+
+    .tags-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 18px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      letter-spacing: -0.01em;
+      cursor: none;
+      transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+    }
+
+    .tag:hover {
+      background: rgba(255,255,255,0.09);
+      border-color: rgba(255,255,255,0.22);
+      color: var(--text-primary);
+      transform: translateY(-1px);
+    }
+
+    /* ============================================================
+       PRICING CARDS
+    ============================================================ */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .pricing-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px;
+      cursor: none;
+      transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1),
+                  background 0.2s ease,
+                  border-color 0.2s ease,
+                  box-shadow 0.2s ease;
+      position: relative;
+    }
+
+    .pricing-card.featured {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.15);
+    }
+
+    .pricing-card.featured::before {
+      content: 'Most popular';
+      position: absolute;
+      top: -1px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--text-primary);
+      color: var(--bg);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 4px 16px;
+      border-radius: 0 0 8px 8px;
+    }
+
+    .pricing-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--border-hover);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+
+    .pricing-name {
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .pricing-price {
+      font-size: 52px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      color: var(--text-primary);
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .pricing-price sup {
+      font-size: 24px;
+      font-weight: 400;
+      vertical-align: super;
+      letter-spacing: 0;
+    }
+
+    .pricing-period {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+    }
+
+    .pricing-features {
+      list-style: none;
+      margin-bottom: 36px;
+    }
+
+    .pricing-features li {
+      font-size: 14px;
+      color: var(--text-secondary);
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .pricing-features li::before {
+      content: '';
+      display: block;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: rgba(120,200,120,0.7);
+      flex-shrink: 0;
+    }
+
+    .pricing-btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border-radius: 10px;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      transition: all 0.2s ease;
+    }
+
+    .pricing-btn.featured-btn {
+      background: var(--text-primary);
+      color: var(--bg);
+      border-color: var(--text-primary);
+    }
+
+    /* ============================================================
+       FOOTER
+    ============================================================ */
+    footer {
+      padding-top: 60px;
+      border-top: 1px solid var(--border);
+      cursor: none;
+    }
+
+    .footer-inner {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: 60px;
+      margin-bottom: 60px;
+    }
+
+    .footer-brand {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
+    }
+
+    .footer-tagline {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      max-width: 220px;
+    }
+
+    .footer-col h4 {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .footer-col ul {
+      list-style: none;
+    }
+
+    .footer-col ul li {
+      margin-bottom: 10px;
+    }
+
+    .footer-link {
+      font-size: 14px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      cursor: none;
+      transition: color 0.2s ease;
+    }
+
+    .footer-link:hover {
+      color: var(--text-primary);
+    }
+
+    .footer-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 28px;
+      border-top: 1px solid var(--border);
+    }
+
+    .footer-copy {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* ============================================================
+       DEMO LABEL
+    ============================================================ */
+    .demo-label {
+      position: fixed;
+      bottom: 28px;
+      left: 28px;
+      z-index: 9999;
+      pointer-events: none;
+    }
+
+    .demo-label-inner {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      backdrop-filter: blur(12px);
+    }
+
+    .demo-label-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .demo-label-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 0.01em;
+    }
+
+    /* ============================================================
+       DIVIDER
+    ============================================================ */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 60px 0;
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- ============================================================
+       CURSOR ELEMENTS
+  ============================================================ -->
+  <div id="cursor-root" aria-hidden="true">
+    <!-- Glow aura (follows mouse loosely) -->
+    <div id="cursor-glow"></div>
+    <!-- Main morphing glass layer -->
+    <div id="cursor-morph"></div>
+    <!-- Precise center dot -->
+    <div id="cursor-dot"></div>
+  </div>
+
+  <!-- ============================================================
+       PAGE CONTENT
+  ============================================================ -->
+  <div class="page">
+
+    <!-- NAV -->
+    <nav>
+      <div class="nav-logo">surface<span>.design</span></div>
+      <ul class="nav-links">
+        <li><a href="#" class="interactive">Home</a></li>
+        <li><a href="#" class="interactive">Products</a></li>
+        <li><a href="#" class="interactive">Pricing</a></li>
+        <li><a href="#" class="interactive">Docs</a></li>
+        <li><a href="#" class="interactive">Contact</a></li>
+      </ul>
+      <a href="#" class="nav-cta interactive">Get started</a>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero-badge interactive">Now in public beta</div>
+
+      <h1>Design feels <em>alive</em><br>when motion matters</h1>
+
+      <p>A premium design system built for the next generation of interfaces. Fluid, precise, and impossibly smooth.</p>
+
+      <div class="hero-buttons">
+        <a href="#" class="btn btn-primary interactive">Start building free</a>
+        <a href="#" class="btn btn-secondary interactive">Watch the demo ↗</a>
+      </div>
+    </section>
+
+    <!-- FEATURE CARDS -->
+    <section class="section">
+      <p class="section-label">Core features</p>
+      <div class="cards-grid">
+
+        <div class="card interactive">
+          <div class="card-icon">✦</div>
+          <h3>Motion Physics</h3>
+          <p>Spring-based interpolation that gives every interaction weight, momentum, and a sense of physical reality.</p>
+        </div>
+
+        <div class="card interactive">
+          <div class="card-icon">◈</div>
+          <h3>Glassmorphism</h3>
+          <p>Layered depth through frosted surfaces, backdrop blur, and carefully tuned transparency hierarchies.</p>
+        </div>
+
+        <div class="card interactive">
+          <div class="card-icon">⬡</div>
+          <h3>Adaptive Cursor</h3>
+          <p>The cursor becomes the interface. It morphs to perfectly match any element you hover, creating fluid continuity.</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- PILL TAGS -->
+    <section class="tags-section">
+      <p class="section-label">Built for every discipline</p>
+      <div class="tags-wrap">
+        <span class="tag interactive">AI</span>
+        <span class="tag interactive">Design</span>
+        <span class="tag interactive">Motion</span>
+        <span class="tag interactive">Cursor</span>
+        <span class="tag interactive">Premium</span>
+        <span class="tag interactive">Interface</span>
+        <span class="tag interactive">Physics</span>
+        <span class="tag interactive">React</span>
+        <span class="tag interactive">WebGL</span>
+        <span class="tag interactive">Framer</span>
+      </div>
+    </section>
+
+    <!-- PRICING -->
+    <section class="section">
+      <p class="section-label">Simple pricing</p>
+      <div class="pricing-grid">
+
+        <div class="pricing-card interactive">
+          <p class="pricing-name">Hobby</p>
+          <p class="pricing-price"><sup>$</sup>0</p>
+          <p class="pricing-period">Free forever</p>
+          <ul class="pricing-features">
+            <li>Up to 3 projects</li>
+            <li>Community support</li>
+            <li>Basic components</li>
+            <li>100MB storage</li>
+          </ul>
+          <a href="#" class="pricing-btn interactive">Get started free</a>
+        </div>
+
+        <div class="pricing-card featured interactive">
+          <p class="pricing-name">Pro</p>
+          <p class="pricing-price"><sup>$</sup>24</p>
+          <p class="pricing-period">per month, billed annually</p>
+          <ul class="pricing-features">
+            <li>Unlimited projects</li>
+            <li>Priority support</li>
+            <li>Full component library</li>
+            <li>Unlimited storage</li>
+            <li>Advanced analytics</li>
+          </ul>
+          <a href="#" class="pricing-btn featured-btn interactive">Start free trial</a>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer>
+      <div class="footer-inner">
+        <div>
+          <p class="footer-brand">surface.design</p>
+          <p class="footer-tagline">Premium motion design system for modern web interfaces.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="#" class="footer-link interactive">Overview</a></li>
+            <li><a href="#" class="footer-link interactive">Features</a></li>
+            <li><a href="#" class="footer-link interactive">Changelog</a></li>
+            <li><a href="#" class="footer-link interactive">Roadmap</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Company</h4>
+          <ul>
+            <li><a href="#" class="footer-link interactive">About</a></li>
+            <li><a href="#" class="footer-link interactive">Blog</a></li>
+            <li><a href="#" class="footer-link interactive">Careers</a></li>
+            <li><a href="#" class="footer-link interactive">Contact</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <ul>
+            <li><a href="#" class="footer-link interactive">Privacy</a></li>
+            <li><a href="#" class="footer-link interactive">Terms</a></li>
+            <li><a href="#" class="footer-link interactive">Cookies</a></li>
+            <li><a href="#" class="footer-link interactive">Security</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p class="footer-copy">© 2025 surface.design. All rights reserved.</p>
+        <p class="footer-copy">Made with motion in mind.</p>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- ============================================================
+       DEMO LABEL
+  ============================================================ -->
+  <div class="demo-label" aria-hidden="true">
+    <div class="demo-label-inner">
+      <p class="demo-label-title">Morphing Cursor Container Demo</p>
+      <p class="demo-label-sub">Hover every interactive element.</p>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       CURSOR JAVASCRIPT
+  ============================================================ -->
+  <script>
+    (function () {
+      'use strict';
+
+      // ============================================================
+      // DOM REFERENCES
+      // ============================================================
+      const cursorRoot  = document.getElementById('cursor-root');
+      const cursorMorph = document.getElementById('cursor-morph');
+      const cursorDot   = document.getElementById('cursor-dot');
+      const cursorGlow  = document.getElementById('cursor-glow');
+
+      // ============================================================
+      // CURSOR STATE
+      // All physical properties interpolated every frame via lerp
+      // ============================================================
+      const mouse = { x: -200, y: -200 };     // Raw mouse position
+      const prev  = { x: -200, y: -200 };     // Previous mouse position for velocity
+
+      // Velocity tracking for stretch effect
+      const vel   = { x: 0, y: 0, mag: 0 };
+
+      // Morph current interpolated state
+      const cur = {
+        x: -200, y: -200,           // Top-left of morph layer
+        w: 20,   h: 20,             // Width / height
+        r: 10,                       // Border radius
+        dot_x: -200, dot_y: -200,  // Dot position
+        glow_size: 80,              // Glow diameter
+      };
+
+      // Target state (what we're lerping toward)
+      const tgt = {
+        x: -200, y: -200,
+        w: 20,   h: 20,
+        r: 10,
+        dot_x: -200, dot_y: -200,
+        glow_size: 80,
+      };
+
+      // Default "resting" cursor dimensions
+      const REST = { w: 20, h: 20, r: 10 };
+
+      // Magnetic pull: offset applied to dot before morphing
+      const magnetic = { dx: 0, dy: 0 };
+
+      // Hover state
+      let hoveredEl   = null;
+      let isHovering  = false;
+      let morphOpacity = 1;
+
+      // ============================================================
+      // LERP UTILITY — linear interpolation
+      // ============================================================
+      function lerp(a, b, t) {
+        return a + (b - a) * t;
+      }
+
+      // ============================================================
+      // MOUSE EVENTS
+      // ============================================================
+      document.addEventListener('mousemove', function (e) {
+        prev.x = mouse.x;
+        prev.y = mouse.y;
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+
+        // Compute velocity vector
+        vel.x = mouse.x - prev.x;
+        vel.y = mouse.y - prev.y;
+        vel.mag = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
+      });
+
+      // ============================================================
+      // HOVER DETECTION — use event delegation on body
+      // ============================================================
+      document.body.addEventListener('mouseover', function (e) {
+        const el = e.target.closest('.interactive');
+        if (el) {
+          hoveredEl  = el;
+          isHovering = true;
+        }
+      });
+
+      document.body.addEventListener('mouseout', function (e) {
+        const el = e.target.closest('.interactive');
+        if (el && (!e.relatedTarget || !e.relatedTarget.closest('.interactive'))) {
+          hoveredEl  = null;
+          isHovering = false;
+        }
+      });
+
+      // ============================================================
+      // MAGNETIC ATTRACTION
+      // Gently pulls the dot toward element center before it morphs
+      // ============================================================
+      function computeMagnetic() {
+        if (!isHovering || !hoveredEl) {
+          magnetic.dx = lerp(magnetic.dx, 0, 0.12);
+          magnetic.dy = lerp(magnetic.dy, 0, 0.12);
+          return;
+        }
+        const rect  = hoveredEl.getBoundingClientRect();
+        const cx    = rect.left + rect.width  / 2;
+        const cy    = rect.top  + rect.height / 2;
+        const dx    = cx - mouse.x;
+        const dy    = cy - mouse.y;
+        const dist  = Math.sqrt(dx * dx + dy * dy);
+        const pull  = Math.min(10, 10 * (1 - Math.min(dist / 120, 1))); // 10px max
+
+        magnetic.dx = lerp(magnetic.dx, (dx / Math.max(dist, 1)) * pull, 0.15);
+        magnetic.dy = lerp(magnetic.dy, (dy / Math.max(dist, 1)) * pull, 0.15);
+      }
+
+      // ============================================================
+      // VELOCITY STRETCH
+      // Slightly elongates morph in direction of travel
+      // ============================================================
+      function applyVelocityStretch(targetW, targetH) {
+        if (isHovering) return { w: targetW, h: targetH }; // No stretch while morphed
+
+        const speed   = Math.min(vel.mag, 20);
+        const stretch = (speed / 20) * 0.35; // Max 35% stretch at full speed
+
+        const absVx = Math.abs(vel.x);
+        const absVy = Math.abs(vel.y);
+        let w = targetW, h = targetH;
+
+        if (absVx > absVy) {
+          // Moving mostly horizontally
+          w = targetW * (1 + stretch);
+          h = targetH * (1 - stretch * 0.3);
+        } else if (absVy > absVx) {
+          // Moving mostly vertically
+          h = targetH * (1 + stretch);
+          w = targetW * (1 - stretch * 0.3);
+        }
+        return { w, h };
+      }
+
+      // ============================================================
+      // GET COMPUTED BORDER RADIUS from element
+      // Returns a single number (simplified from shorthand)
+      // ============================================================
+      function getElementRadius(el) {
+        const cs  = window.getComputedStyle(el);
+        const raw = cs.borderRadius || cs.borderTopLeftRadius || '0px';
+        // Try to parse first value from shorthand "8px 8px 8px 8px"
+        const parts = raw.split(' ');
+        const first = parseFloat(parts[0]) || 0;
+
+        // Cap extreme radii (buttons can be 100px pills)
+        return Math.min(first, 100);
+      }
+
+      // ============================================================
+      // ANIMATION LOOP
+      // ============================================================
+      let lastTime = 0;
+
+      function tick(timestamp) {
+        const dt = Math.min((timestamp - lastTime) / 16.67, 3); // Delta time, capped at 3 frames
+        lastTime  = timestamp;
+
+        // ----------------------------------------------------------
+        // Compute magnetic pull offset
+        // ----------------------------------------------------------
+        computeMagnetic();
+
+        // Effective mouse pos includes magnetic pull
+        const eff_x = mouse.x + magnetic.dx;
+        const eff_y = mouse.y + magnetic.dy;
+
+        // ----------------------------------------------------------
+        // DOT — always follows raw mouse precisely
+        // ----------------------------------------------------------
+        cur.dot_x = lerp(cur.dot_x, mouse.x, 0.28 * dt);
+        cur.dot_y = lerp(cur.dot_y, mouse.y, 0.28 * dt);
+
+        // ----------------------------------------------------------
+        // GLOW — soft trailing aura
+        // ----------------------------------------------------------
+        const targetGlowSize = isHovering ? 0 : 80;
+        cur.glow_size = lerp(cur.glow_size, targetGlowSize, 0.08 * dt);
+
+        // ----------------------------------------------------------
+        // Determine morph targets
+        // ----------------------------------------------------------
+        if (isHovering && hoveredEl) {
+          const rect = hoveredEl.getBoundingClientRect();
+          const r    = getElementRadius(hoveredEl);
+
+          // Target: precisely the element
+          tgt.x = rect.left;
+          tgt.y = rect.top;
+          tgt.w = rect.width;
+          tgt.h = rect.height;
+          tgt.r = r;
+        } else {
+          // Target: small circle around effective mouse
+          tgt.x = eff_x - REST.w / 2;
+          tgt.y = eff_y - REST.h / 2;
+          tgt.w = REST.w;
+          tgt.h = REST.h;
+          tgt.r = REST.r;
+        }
+
+        // ----------------------------------------------------------
+        // INTERPOLATION — spring-like lerp factors
+        // ----------------------------------------------------------
+        const FAST = 0.14 * dt;
+        const MED  = 0.11 * dt;
+        const SLOW = 0.09 * dt;
+
+        cur.x = lerp(cur.x, tgt.x, MED);
+        cur.y = lerp(cur.y, tgt.y, MED);
+        cur.w = lerp(cur.w, tgt.w, SLOW);
+        cur.h = lerp(cur.h, tgt.h, SLOW);
+        cur.r = lerp(cur.r, tgt.r, FAST);
+
+        // ----------------------------------------------------------
+        // Velocity stretch on morph layer (resting only)
+        // ----------------------------------------------------------
+        const stretched = applyVelocityStretch(cur.w, cur.h);
+
+        // ----------------------------------------------------------
+        // OPACITY management
+        // Glass layer: fade in when hovering, fade out at rest
+        // ----------------------------------------------------------
+        const targetOpacity = isHovering ? 1 : 0.55;
+        morphOpacity = lerp(morphOpacity, targetOpacity, 0.1 * dt);
+
+        // Dot: fade out while morphed large
+        const dotFadeThreshold = 40;
+        const dotOpacity = isHovering
+          ? Math.max(0, 1 - (cur.w - dotFadeThreshold) / dotFadeThreshold)
+          : 1;
+
+        // ----------------------------------------------------------
+        // APPLY TO DOM
+        // Batch all style writes to avoid layout thrashing
+        // ----------------------------------------------------------
+
+        // Morph layer
+        cursorMorph.style.left          = cur.x + 'px';
+        cursorMorph.style.top           = cur.y + 'px';
+        cursorMorph.style.width         = stretched.w + 'px';
+        cursorMorph.style.height        = stretched.h + 'px';
+        cursorMorph.style.borderRadius  = cur.r + 'px';
+        cursorMorph.style.opacity       = morphOpacity;
+
+        // Dot — centered at raw mouse
+        cursorDot.style.left    = cur.dot_x + 'px';
+        cursorDot.style.top     = cur.dot_y + 'px';
+        cursorDot.style.opacity = dotOpacity;
+
+        // Glow aura
+        const glowSize = cur.glow_size;
+        cursorGlow.style.left   = (cur.dot_x - glowSize / 2) + 'px';
+        cursorGlow.style.top    = (cur.dot_y - glowSize / 2) + 'px';
+        cursorGlow.style.width  = glowSize + 'px';
+        cursorGlow.style.height = glowSize + 'px';
+        cursorGlow.style.opacity = isHovering ? 0 : 0.7;
+
+        // Velocity: slowly decay
+        vel.x *= 0.82;
+        vel.y *= 0.82;
+        vel.mag *= 0.82;
+
+        requestAnimationFrame(tick);
+      }
+
+      requestAnimationFrame(tick);
+
+      // ============================================================
+      // HIDE cursor when leaving window
+      // ============================================================
+      document.addEventListener('mouseleave', function () {
+        mouse.x = -500;
+        mouse.y = -500;
+      });
+
+      // ============================================================
+      // Ensure cursor: none on all interactive elements
+      // ============================================================
+      document.querySelectorAll('.interactive, a, button').forEach(function (el) {
+        el.style.cursor = 'none';
+      });
+
+    })();
+  </script>
+
+</body>
+</html>
