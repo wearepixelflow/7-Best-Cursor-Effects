@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Premium Magnetic Button</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+body{
+    font-family:Inter,sans-serif;
+    height:100vh;
+    overflow:hidden;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    background:
+    radial-gradient(circle at 20% 20%,#6d28d9 0%,transparent 25%),
+    radial-gradient(circle at 80% 30%,#2563eb 0%,transparent 25%),
+    radial-gradient(circle at 70% 80%,#06b6d4 0%,transparent 30%),
+    #070b14;
+}
+
+body::before{
+    content:"";
+    position:absolute;
+    width:100%;
+    height:100%;
+    backdrop-filter:blur(60px);
+}
+
+.container{
+    position:relative;
+    z-index:10;
+    text-align:center;
+}
+
+h1{
+    color:white;
+    font-size:60px;
+    font-weight:800;
+    margin-bottom:18px;
+    letter-spacing:-2px;
+}
+
+p{
+    color:#bfc7da;
+    font-size:18px;
+    margin-bottom:55px;
+}
+
+.button-wrap{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    position:relative;
+}
+
+.magnetic{
+    position:relative;
+    width:230px;
+    height:75px;
+    border-radius:100px;
+
+    display:flex;
+    justify-content:center;
+    align-items:center;
+
+    cursor:pointer;
+
+    font-size:20px;
+    font-weight:700;
+
+    color:white;
+
+    background:linear-gradient(135deg,#4f46e5,#06b6d4);
+
+    transition:
+    transform .12s linear,
+    box-shadow .3s,
+    background .4s;
+
+    box-shadow:
+    0 20px 40px rgba(0,255,255,.2),
+    inset 0 1px rgba(255,255,255,.3);
+
+    overflow:hidden;
+}
+
+.magnetic::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:
+    linear-gradient(120deg,
+    transparent,
+    rgba(255,255,255,.45),
+    transparent);
+    transform:translateX(-100%);
+}
+
+.magnetic:hover::before{
+    animation:shine 1.2s linear;
+}
+
+@keyframes shine{
+    to{
+        transform:translateX(250%);
+    }
+}
+
+.glow{
+    position:absolute;
+    width:250px;
+    height:250px;
+    border-radius:50%;
+    background:radial-gradient(circle,
+    rgba(0,255,255,.45),
+    transparent 70%);
+    filter:blur(35px);
+    pointer-events:none;
+    opacity:0;
+    transition:.3s;
+}
+
+.button-wrap:hover .glow{
+    opacity:1;
+}
+
+.ripple{
+    position:absolute;
+    border-radius:50%;
+    background:rgba(255,255,255,.45);
+    transform:scale(0);
+    animation:ripple .6s linear;
+}
+
+@keyframes ripple{
+
+to{
+transform:scale(6);
+opacity:0;
+}
+
+}
+
+.small{
+    margin-top:60px;
+    color:#8c95a7;
+    font-size:14px;
+}
+</style>
+
+</head>
+<body>
+
+<div class="container">
+
+<h1>Magnetic Hover</h1>
+
+<p>Premium cursor attraction effect with luxury animation.</p>
+
+<div class="button-wrap">
+
+<div class="glow"></div>
+
+<div class="magnetic">
+Launch Experience
+</div>
+
+</div>
+
+<div class="small">
+Move your mouse around the button ✨
+</div>
+
+</div>
+
+<script>
+
+const button=document.querySelector(".magnetic");
+const glow=document.querySelector(".glow");
+const wrap=document.querySelector(".button-wrap");
+
+let x=0;
+let y=0;
+let targetX=0;
+let targetY=0;
+
+wrap.addEventListener("mousemove",(e)=>{
+
+const rect=button.getBoundingClientRect();
+
+const relX=e.clientX-(rect.left+rect.width/2);
+const relY=e.clientY-(rect.top+rect.height/2);
+
+targetX=relX*0.35;
+targetY=relY*0.35;
+
+glow.style.left=(e.clientX-wrap.getBoundingClientRect().left-125)+"px";
+glow.style.top=(e.clientY-wrap.getBoundingClientRect().top-125)+"px";
+
+});
+
+wrap.addEventListener("mouseleave",()=>{
+
+targetX=0;
+targetY=0;
+
+});
+
+function animate(){
+
+x+=(targetX-x)*0.15;
+y+=(targetY-y)*0.15;
+
+button.style.transform=`translate(${x}px,${y}px)`;
+
+requestAnimationFrame(animate);
+
+}
+
+animate();
+
+button.addEventListener("click",(e)=>{
+
+const ripple=document.createElement("span");
+
+const rect=button.getBoundingClientRect();
+
+const size=30;
+
+ripple.className="ripple";
+
+ripple.style.width=size+"px";
+ripple.style.height=size+"px";
+
+ripple.style.left=(e.clientX-rect.left-size/2)+"px";
+ripple.style.top=(e.clientY-rect.top-size/2)+"px";
+
+button.appendChild(ripple);
+
+setTimeout(()=>{
+
+ripple.remove();
+
+},600);
+
+});
+
+document.addEventListener("mousemove",(e)=>{
+
+const moveX=(window.innerWidth/2-e.clientX)/60;
+const moveY=(window.innerHeight/2-e.clientY)/60;
+
+document.body.style.backgroundPosition=
+`${moveX}px ${moveY}px,
+${-moveX}px ${-moveY}px,
+${moveY}px ${moveX}px`;
+
+});
+
+</script>
+
+</body>
+</html>
