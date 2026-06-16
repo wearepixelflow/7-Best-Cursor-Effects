@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dot + Ring Cursor — Interactive Demo</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#0A0A0A;
+    --surface:rgba(255,255,255,0.04);
+    --border:rgba(255,255,255,0.08);
+    --text-primary:#FFFFFF;
+    --text-secondary:rgba(255,255,255,0.5);
+    --accent:rgba(255,255,255,0.9);
+    --glow:rgba(255,255,255,0.06);
+    --card-hover:rgba(255,255,255,0.06);
+  }
+  html,body{
+    width:100%;min-height:100vh;
+    background:var(--bg);
+    font-family:-apple-system,BlinkMacSystemFont,'Inter','SF Pro Display',sans-serif;
+    cursor:none;
+    overflow-x:hidden;
+    color:var(--text-primary);
+  }
+
+  /* ─── CURSOR ─── */
+  #cursor-dot{
+    position:fixed;top:0;left:0;
+    width:6px;height:6px;
+    background:#fff;
+    border-radius:50%;
+    pointer-events:none;
+    z-index:9999;
+    transform:translate(-50%,-50%);
+    will-change:transform;
+    transition:transform 180ms cubic-bezier(.22,1,.36,1),opacity 180ms;
+  }
+  #cursor-ring{
+    position:fixed;top:0;left:0;
+    width:34px;height:34px;
+    border:2px solid rgba(255,255,255,0.85);
+    border-radius:50%;
+    pointer-events:none;
+    z-index:9998;
+    transform:translate(-50%,-50%);
+    will-change:transform;
+    transition:transform 220ms cubic-bezier(.22,1,.36,1),
+               opacity 220ms,
+               border-color 220ms,
+               width 220ms cubic-bezier(.22,1,.36,1),
+               height 220ms cubic-bezier(.22,1,.36,1);
+  }
+  #cursor-ring.hovering{
+    width:47.6px;height:47.6px;
+    border-color:rgba(255,255,255,0.7);
+  }
+  #cursor-dot.hovering{
+    transform:translate(-50%,-50%) scale(0);
+    opacity:0;
+  }
+
+  /* Trail */
+  .trail{
+    position:fixed;
+    width:4px;height:4px;
+    background:rgba(255,255,255,0.15);
+    border-radius:50%;
+    pointer-events:none;
+    z-index:9990;
+    transform:translate(-50%,-50%);
+    will-change:transform,opacity;
+  }
+
+  /* ─── BACKGROUND ─── */
+  #bg-grid{
+    position:fixed;inset:0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size:60px 60px;
+    pointer-events:none;z-index:0;
+  }
+  #bg-radial{
+    position:fixed;inset:0;
+    pointer-events:none;z-index:1;
+    transition:background 0.1s;
+  }
+
+  /* ─── PARTICLES ─── */
+  #particles-canvas{position:fixed;inset:0;pointer-events:none;z-index:2}
+
+  /* ─── LAYOUT ─── */
+  .page{position:relative;z-index:10;max-width:1200px;margin:0 auto;padding:80px 40px}
+
+  /* ─── HEADER ─── */
+  .header{text-align:center;margin-bottom:80px}
+  .header-eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:11px;letter-spacing:0.12em;text-transform:uppercase;
+    color:var(--text-secondary);
+    border:1px solid var(--border);
+    border-radius:100px;
+    padding:6px 16px;
+    margin-bottom:28px;
+    background:var(--surface);
+    backdrop-filter:blur(12px);
+  }
+  .header-eyebrow-dot{
+    width:6px;height:6px;
+    background:#fff;
+    border-radius:50%;
+    animation:pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.4;transform:scale(0.8)}}
+  .header h1{
+    font-size:clamp(42px,6vw,72px);
+    font-weight:700;
+    letter-spacing:-0.03em;
+    line-height:1.05;
+    margin-bottom:20px;
+    background:linear-gradient(135deg,#fff 30%,rgba(255,255,255,0.5));
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    background-clip:text;
+  }
+  .header p{
+    font-size:18px;
+    color:var(--text-secondary);
+    max-width:480px;
+    margin:0 auto;
+    line-height:1.65;
+  }
+
+  /* ─── CARDS GRID ─── */
+  .cards-grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:16px;
+    margin-bottom:60px;
+  }
+  @media(max-width:768px){.cards-grid{grid-template-columns:1fr}}
+
+  .card{
+    position:relative;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:20px;
+    padding:32px 28px 36px;
+    backdrop-filter:blur(16px);
+    cursor:none;
+    transition:border-color 300ms, background 300ms, transform 300ms cubic-bezier(.22,1,.36,1);
+    overflow:hidden;
+  }
+  .card::before{
+    content:'';position:absolute;inset:0;
+    border-radius:20px;
+    background:radial-gradient(circle at var(--mx,50%) var(--my,50%), rgba(255,255,255,0.06) 0%, transparent 60%);
+    opacity:0;
+    transition:opacity 300ms;
+    pointer-events:none;
+  }
+  .card:hover::before{opacity:1}
+  .card:hover{
+    border-color:rgba(255,255,255,0.14);
+    background:var(--card-hover);
+    transform:translateY(-2px);
+  }
+  .card-number{
+    font-size:11px;letter-spacing:0.1em;text-transform:uppercase;
+    color:rgba(255,255,255,0.25);
+    margin-bottom:24px;
+    font-weight:500;
+  }
+  .card-icon{
+    width:44px;height:44px;
+    border:1px solid var(--border);
+    border-radius:12px;
+    display:flex;align-items:center;justify-content:center;
+    margin-bottom:20px;
+    background:rgba(255,255,255,0.04);
+  }
+  .card-icon svg{width:20px;height:20px;stroke:#fff;stroke-width:1.5;fill:none}
+  .card h2{
+    font-size:22px;font-weight:600;letter-spacing:-0.02em;
+    margin-bottom:8px;
+    color:#fff;
+  }
+  .card p{
+    font-size:14px;
+    color:var(--text-secondary);
+    line-height:1.6;
+  }
+  .card-badge{
+    display:inline-flex;align-items:center;gap:6px;
+    margin-top:20px;
+    font-size:11px;letter-spacing:0.08em;text-transform:uppercase;
+    color:rgba(255,255,255,0.35);
+    padding:5px 12px;
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:100px;
+    background:rgba(255,255,255,0.03);
+  }
+  .card-badge-dot{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,0.35)}
+
+  /* ─── BOTTOM LAYOUT ─── */
+  .bottom-section{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+    align-items:start;
+  }
+  @media(max-width:900px){.bottom-section{grid-template-columns:1fr}}
+
+  /* ─── CODE PANEL ─── */
+  .code-panel{
+    background:rgba(255,255,255,0.03);
+    border:1px solid var(--border);
+    border-radius:20px;
+    overflow:hidden;
+    backdrop-filter:blur(16px);
+  }
+  .code-panel-header{
+    display:flex;align-items:center;gap:8px;
+    padding:14px 20px;
+    border-bottom:1px solid var(--border);
+    background:rgba(255,255,255,0.02);
+  }
+  .code-dot{width:10px;height:10px;border-radius:50%}
+  .code-dot-r{background:#FF5F57}
+  .code-dot-y{background:#FFBD2E}
+  .code-dot-g{background:#28C840}
+  .code-panel-title{
+    margin-left:auto;
+    font-size:11px;letter-spacing:0.08em;text-transform:uppercase;
+    color:rgba(255,255,255,0.25);
+  }
+  .code-body{padding:28px;font-family:'SF Mono','Fira Code','Consolas',monospace;font-size:13.5px;line-height:2}
+  .code-line{display:flex;align-items:center;gap:0;white-space:pre}
+  .code-kw{color:#FF79C6}
+  .code-var{color:#8BE9FD}
+  .code-op{color:rgba(255,255,255,0.4)}
+  .code-paren{color:rgba(255,255,255,0.5)}
+  .code-semi{color:rgba(255,255,255,0.3)}
+  .code-comment{color:rgba(255,255,255,0.2);font-style:italic}
+  .code-value{
+    color:#FFD700;
+    position:relative;
+    transition:text-shadow 0.3s;
+  }
+  .code-value.highlight{
+    color:#fff;
+    text-shadow:0 0 12px rgba(255,215,0,0.9),0 0 24px rgba(255,215,0,0.5);
+  }
+  .code-value.highlight::after{
+    content:'';
+    position:absolute;inset:-2px -4px;
+    background:rgba(255,215,0,0.15);
+    border-radius:4px;
+    border:1px solid rgba(255,215,0,0.4);
+  }
+
+  /* ─── PARTICLES FROM CODE ─── */
+  #code-particles{position:absolute;pointer-events:none;overflow:visible;z-index:50}
+  .cp{
+    position:absolute;
+    width:3px;height:3px;
+    background:rgba(255,215,0,0.8);
+    border-radius:50%;
+    pointer-events:none;
+  }
+
+  /* ─── EXPLANATION PANEL ─── */
+  .explain-panel{
+    background:rgba(255,255,255,0.03);
+    border:1px solid var(--border);
+    border-radius:20px;
+    padding:32px 28px;
+    backdrop-filter:blur(16px);
+  }
+  .explain-title{
+    font-size:12px;letter-spacing:0.1em;text-transform:uppercase;
+    color:rgba(255,255,255,0.3);
+    margin-bottom:28px;
+  }
+  .explain-item{
+    display:flex;gap:16px;
+    margin-bottom:28px;
+    padding-bottom:28px;
+    border-bottom:1px solid var(--border);
+  }
+  .explain-item:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+  .explain-icon{
+    width:36px;height:36px;flex-shrink:0;
+    border:1px solid var(--border);border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,0.03);
+    margin-top:2px;
+  }
+  .explain-icon svg{width:16px;height:16px;stroke:#fff;stroke-width:1.5;fill:none}
+  .explain-item-title{font-size:15px;font-weight:600;color:#fff;margin-bottom:5px;letter-spacing:-0.01em}
+  .explain-item-desc{font-size:13px;color:var(--text-secondary);line-height:1.65}
+  .explain-value{
+    display:inline-block;
+    background:rgba(255,215,0,0.1);
+    border:1px solid rgba(255,215,0,0.25);
+    border-radius:6px;
+    padding:1px 7px;
+    font-family:'SF Mono','Fira Code',monospace;
+    font-size:12px;color:rgba(255,215,0,0.9);
+    margin:0 2px;
+  }
+
+  /* ─── FLOATING LABELS ─── */
+  .float-label{
+    position:fixed;
+    display:flex;align-items:center;gap:10px;
+    background:rgba(10,10,10,0.85);
+    border:1px solid rgba(255,255,255,0.12);
+    border-radius:100px;
+    padding:8px 18px 8px 14px;
+    font-size:12px;letter-spacing:0.06em;text-transform:uppercase;
+    color:#fff;
+    backdrop-filter:blur(20px);
+    pointer-events:none;
+    z-index:9000;
+    opacity:0;
+    transform:translateY(8px) scale(0.96);
+    transition:opacity 400ms cubic-bezier(.22,1,.36,1),
+               transform 400ms cubic-bezier(.22,1,.36,1),
+               filter 400ms;
+    filter:blur(4px);
+    white-space:nowrap;
+  }
+  .float-label.visible{
+    opacity:1;transform:translateY(0) scale(1);filter:blur(0);
+  }
+  .float-label-dot{
+    width:6px;height:6px;border-radius:50%;
+    background:#fff;flex-shrink:0;
+  }
+  .float-arrow{
+    position:fixed;
+    pointer-events:none;
+    z-index:8999;
+    opacity:0;
+    transition:opacity 400ms;
+  }
+  .float-arrow.visible{opacity:0.5}
+
+  /* ─── SPEED INDICATOR ─── */
+  .speed-bar-wrap{
+    position:fixed;bottom:36px;left:50%;transform:translateX(-50%);
+    display:flex;align-items:center;gap:12px;
+    background:rgba(10,10,10,0.8);
+    border:1px solid var(--border);
+    border-radius:100px;
+    padding:10px 20px;
+    backdrop-filter:blur(20px);
+    pointer-events:none;z-index:9000;
+    font-size:11px;letter-spacing:0.1em;text-transform:uppercase;
+    color:rgba(255,255,255,0.4);
+  }
+  .speed-bar{
+    width:100px;height:3px;
+    background:rgba(255,255,255,0.08);
+    border-radius:2px;overflow:hidden;
+  }
+  .speed-fill{
+    height:100%;
+    background:rgba(255,255,255,0.6);
+    border-radius:2px;
+    width:0%;
+    transition:width 0.1s;
+  }
+  .speed-val{
+    font-family:'SF Mono','Fira Code',monospace;
+    color:rgba(255,255,255,0.6);
+    min-width:36px;
+    text-align:right;
+  }
+
+  /* ─── FOOTER ─── */
+  .footer{
+    text-align:center;
+    margin-top:80px;
+    padding-top:40px;
+    border-top:1px solid var(--border);
+    font-size:12px;
+    color:rgba(255,255,255,0.2);
+    letter-spacing:0.06em;
+  }
+</style>
+</head>
+<body>
+
+<!-- Background layers -->
+<div id="bg-grid"></div>
+<div id="bg-radial"></div>
+<canvas id="particles-canvas"></canvas>
+
+<!-- Custom cursors -->
+<div id="cursor-dot"></div>
+<div id="cursor-ring"></div>
+
+<!-- Floating labels -->
+<div class="float-label" id="lbl1"><span class="float-label-dot"></span>Instant Tracking</div>
+<div class="float-label" id="lbl2"><span class="float-label-dot"></span>Smooth Lerp Motion</div>
+<div class="float-label" id="lbl3"><span class="float-label-dot"></span>Hover Interaction</div>
+
+<!-- Speed indicator -->
+<div class="speed-bar-wrap">
+  <span>Ring lag</span>
+  <div class="speed-bar"><div class="speed-fill" id="speed-fill"></div></div>
+  <span class="speed-val" id="speed-val">0px</span>
+</div>
+
+<!-- Main page -->
+<div class="page">
+
+  <header class="header">
+    <div class="header-eyebrow">
+      <span class="header-eyebrow-dot"></span>
+      YouTube Tutorial · Cursor Design
+    </div>
+    <h1>Dot + Ring<br>Cursor Effect</h1>
+    <p>Two independent elements. One instant, one interpolated. Together they feel alive.</p>
+  </header>
+
+  <div class="cards-grid">
+    <!-- Card 1 -->
+    <div class="card" data-card="1">
+      <div class="card-number">01</div>
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="6" stroke-opacity="0.4"/></svg>
+      </div>
+      <h2>Instant Dot</h2>
+      <p>Follows mouse immediately with zero delay. Locked to cursor position every single frame.</p>
+      <div class="card-badge"><span class="card-badge-dot"></span>No smoothing · 0ms delay</div>
+    </div>
+    <!-- Card 2 -->
+    <div class="card" data-card="2">
+      <div class="card-number">02</div>
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 8 8" stroke-dasharray="3 3"/></svg>
+      </div>
+      <h2>Smooth Ring</h2>
+      <p>Lerped using interpolation. Each frame closes 15% of the distance — buttery, floating, premium.</p>
+      <div class="card-badge"><span class="card-badge-dot"></span>Lerp factor · 0.15</div>
+    </div>
+    <!-- Card 3 -->
+    <div class="card" data-card="3">
+      <div class="card-number">03</div>
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2" stroke-linecap="round"/></svg>
+      </div>
+      <h2>Hover Interaction</h2>
+      <p>Ring expands · Dot disappears. A satisfying state change communicating interactivity.</p>
+      <div class="card-badge"><span class="card-badge-dot"></span>220ms easing · Scale 1.4×</div>
+    </div>
+  </div>
+
+  <div class="bottom-section">
+    <!-- Code panel -->
+    <div style="position:relative">
+      <div class="code-panel">
+        <div class="code-panel-header">
+          <div class="code-dot code-dot-r"></div>
+          <div class="code-dot code-dot-y"></div>
+          <div class="code-dot code-dot-g"></div>
+          <span class="code-panel-title">lerp.js</span>
+        </div>
+        <div class="code-body">
+          <div class="code-line"><span class="code-comment">// requestAnimationFrame loop</span></div>
+          <div class="code-line" style="height:8px"></div>
+          <div class="code-line"><span class="code-kw">function </span><span style="color:#50FA7B">animate</span><span class="code-paren">() {</span></div>
+          <div class="code-line">  <span class="code-var">ringX</span><span class="code-op"> += </span><span class="code-paren">(</span><span class="code-var">mouseX </span><span class="code-op">- </span><span class="code-var">ringX</span><span class="code-paren">)</span><span class="code-op"> * </span><span class="code-value" id="lerp-val">0.15</span><span class="code-semi">;</span></div>
+          <div class="code-line">  <span class="code-var">ringY</span><span class="code-op"> += </span><span class="code-paren">(</span><span class="code-var">mouseY </span><span class="code-op">- </span><span class="code-var">ringY</span><span class="code-paren">)</span><span class="code-op"> * </span><span class="code-value" id="lerp-val2">0.15</span><span class="code-semi">;</span></div>
+          <div class="code-line" style="height:8px"></div>
+          <div class="code-line">  <span style="color:#50FA7B">moveRing</span><span class="code-paren">(</span><span class="code-var">ringX</span><span class="code-op">, </span><span class="code-var">ringY</span><span class="code-paren">);</span></div>
+          <div class="code-line">  <span class="code-kw">requestAnimationFrame</span><span class="code-paren">(</span><span style="color:#50FA7B">animate</span><span class="code-paren">);</span></div>
+          <div class="code-line"><span class="code-paren">}</span></div>
+        </div>
+      </div>
+      <!-- Code particles container -->
+      <div id="code-particles-wrap" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:50"></div>
+    </div>
+
+    <!-- Explanation panel -->
+    <div class="explain-panel">
+      <div class="explain-title">How it works</div>
+
+      <div class="explain-item">
+        <div class="explain-icon">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2" fill="white" stroke="none"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2" stroke-linecap="round"/></svg>
+        </div>
+        <div>
+          <div class="explain-item-title">The dot is your cursor</div>
+          <div class="explain-item-desc">Updated synchronously inside <span class="explain-value">mousemove</span>. No rAF, no math. Always at exactly (x, y).</div>
+        </div>
+      </div>
+
+      <div class="explain-item">
+        <div class="explain-icon">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M8 12l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <div class="explain-item-title">The ring uses linear interpolation</div>
+          <div class="explain-item-desc">Each frame: <span class="explain-value">current += (target - current) × 0.15</span>. This means it always closes 15% of the remaining gap — fast at first, then slows exponentially.</div>
+        </div>
+      </div>
+
+      <div class="explain-item">
+        <div class="explain-icon">
+          <svg viewBox="0 0 24 24"><path d="M3 12h18M12 3l9 9-9 9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <div class="explain-item-title">Why <span class="explain-value">0.15</span> feels premium</div>
+          <div class="explain-item-desc">Too high (0.5+) and the ring snaps. Too low (0.05) and it floats sluggishly. 0.15 is the sweet spot: visible lag, satisfying catch-up, buttery feel.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p>Pure JavaScript · requestAnimationFrame · No libraries · 60fps</p>
+  </footer>
+</div>
+
+<script>
+// ─── STATE ───────────────────────────────────────────────────────
+const dot   = document.getElementById('cursor-dot');
+const ring  = document.getElementById('cursor-ring');
+const bgRad = document.getElementById('bg-radial');
+const speedFill = document.getElementById('speed-fill');
+const speedVal  = document.getElementById('speed-val');
+const lerpV  = document.getElementById('lerp-val');
+const lerpV2 = document.getElementById('lerp-val2');
+
+let mx = window.innerWidth/2, my = window.innerHeight/2;
+let rx = mx, ry = my;
+let prevMx = mx, prevMy = my;
+let speed = 0;
+let hovering = false;
+let rafId;
+
+// Trail pool
+const TRAIL_COUNT = 8;
+const trails = [];
+for(let i=0;i<TRAIL_COUNT;i++){
+  const el = document.createElement('div');
+  el.className = 'trail';
+  el.style.opacity = (0.12 - i*0.013).toFixed(3);
+  el.style.width = el.style.height = (4 - i*0.3).toFixed(1)+'px';
+  document.body.appendChild(el);
+  trails.push({el, x:mx, y:my, delay:i*2});
+}
+
+// ─── MOUSE ───────────────────────────────────────────────────────
+document.addEventListener('mousemove', e => {
+  prevMx = mx; prevMy = my;
+  mx = e.clientX; my = e.clientY;
+  speed = Math.hypot(mx-prevMx, my-prevMy);
+
+  // Dot: instant
+  dot.style.transform = `translate3d(${mx-3}px,${my-3}px,0)`;
+
+  // BG radial glow
+  bgRad.style.background = `radial-gradient(600px at ${mx}px ${my}px, rgba(255,255,255,0.035) 0%, transparent 70%)`;
+
+  // Card shimmer
+  cards.forEach(card => {
+    const r = card.getBoundingClientRect();
+    const cx = mx - r.left;
+    const cy = my - r.top;
+    card.style.setProperty('--mx', (cx/r.width*100).toFixed(1)+'%');
+    card.style.setProperty('--my', (cy/r.height*100).toFixed(1)+'%');
+  });
+});
+
+// ─── HOVER ───────────────────────────────────────────────────────
+const cards = document.querySelectorAll('.card');
+cards.forEach(card => {
+  card.addEventListener('mouseenter', () => {
+    hovering = true;
+    ring.classList.add('hovering');
+    dot.classList.add('hovering');
+  });
+  card.addEventListener('mouseleave', () => {
+    hovering = false;
+    ring.classList.remove('hovering');
+    dot.classList.remove('hovering');
+  });
+});
+
+// ─── LERP LOOP ───────────────────────────────────────────────────
+let trailPositions = Array(TRAIL_COUNT).fill(null).map(()=>({x:mx,y:my}));
+let trailPtr = 0;
+
+function lerp(a, b, t){ return a + (b - a) * t; }
+
+function frame(){
+  // Ring interpolation — THE KEY FORMULA
+  rx += (mx - rx) * 0.15;
+  ry += (my - ry) * 0.15;
+
+  ring.style.transform = `translate3d(${rx-17}px,${ry-17}px,0)`;
+
+  // Speed / distance
+  const dist = Math.hypot(mx-rx, my-ry);
+  const spd  = Math.min(dist, 120);
+  const pct  = (spd/120*100).toFixed(0);
+  speedFill.style.width = pct+'%';
+  speedFill.style.background = `rgba(255,255,255,${0.3+spd/120*0.5})`;
+  speedVal.textContent = Math.round(dist)+'px';
+
+  // Trail
+  trailPositions[trailPtr] = {x:mx, y:my};
+  trailPtr = (trailPtr+1) % TRAIL_COUNT;
+  for(let i=0;i<TRAIL_COUNT;i++){
+    const idx = (trailPtr - 1 - i + TRAIL_COUNT) % TRAIL_COUNT;
+    const tp  = trailPositions[idx];
+    const alpha = (1 - i/TRAIL_COUNT) * 0.18 * Math.min(speed/10,1);
+    trails[i].el.style.opacity = alpha;
+    trails[i].el.style.transform = `translate3d(${tp.x-2}px,${tp.y-2}px,0)`;
+  }
+
+  rafId = requestAnimationFrame(frame);
+}
+frame();
+
+// ─── AMBIENT PARTICLES ───────────────────────────────────────────
+const canvas = document.getElementById('particles-canvas');
+const ctx    = canvas.getContext('2d');
+let pw = canvas.width  = window.innerWidth;
+let ph = canvas.height = window.innerHeight;
+window.addEventListener('resize', ()=>{ pw=canvas.width=window.innerWidth; ph=canvas.height=window.innerHeight; });
+
+const PCOUNT = 55;
+const particles = Array.from({length:PCOUNT}, ()=>({
+  x: Math.random()*pw, y: Math.random()*ph,
+  vx: (Math.random()-.5)*0.18, vy: (Math.random()-.5)*0.18,
+  r: Math.random()*1.2+0.3,
+  a: Math.random()*0.25+0.05,
+  phase: Math.random()*Math.PI*2
+}));
+
+let pTime = 0;
+function drawParticles(ts){
+  ctx.clearRect(0,0,pw,ph);
+  pTime = ts*0.001;
+  particles.forEach(p=>{
+    p.x += p.vx; p.y += p.vy;
+    if(p.x<0)p.x=pw; if(p.x>pw)p.x=0;
+    if(p.y<0)p.y=ph; if(p.y>ph)p.y=0;
+    const flicker = p.a * (0.7 + 0.3*Math.sin(pTime*1.2+p.phase));
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx.fillStyle = `rgba(255,255,255,${flicker})`;
+    ctx.fill();
+  });
+  requestAnimationFrame(drawParticles);
+}
+requestAnimationFrame(drawParticles);
+
+// ─── CODE HIGHLIGHT ANIMATION ─────────────────────────────────────
+const cpWrap = document.getElementById('code-particles-wrap');
+const lvEls  = [lerpV, lerpV2];
+
+function pulseCode(){
+  lvEls.forEach(el => el.classList.add('highlight'));
+
+  // Spawn code particles from the value position → ring position
+  const r1 = lerpV.getBoundingClientRect();
+  const panelRect = cpWrap.closest('.bottom-section').getBoundingClientRect();
+  // origin in page coords
+  const ox = r1.left + r1.width/2;
+  const oy = r1.top  + r1.height/2;
+
+  for(let i=0;i<10;i++){
+    setTimeout(()=>{
+      const p = document.createElement('div');
+      p.className='cp';
+      p.style.left = (ox - panelRect.left + (Math.random()-0.5)*12)+'px';
+      p.style.top  = (oy - panelRect.top  + (Math.random()-0.5)*8)+'px';
+      cpWrap.appendChild(p);
+
+      // animate toward cursor ring position
+      const tx = rx - panelRect.left;
+      const ty = ry - panelRect.top;
+      const dx = tx - parseFloat(p.style.left);
+      const dy = ty - parseFloat(p.style.top);
+      const dur = 600 + Math.random()*300;
+
+      p.animate([
+        {transform:'translate(0,0)', opacity:0.9, offset:0},
+        {transform:`translate(${dx*0.4}px,${dy*0.4}px)`, opacity:0.6, offset:0.4},
+        {transform:`translate(${dx}px,${dy}px)`, opacity:0, offset:1}
+      ], {duration:dur, easing:'cubic-bezier(.22,1,.36,1)', fill:'forwards'})
+      .finished.then(()=>p.remove());
+    }, i*40);
+  }
+
+  setTimeout(()=>{
+    lvEls.forEach(el=>el.classList.remove('highlight'));
+  }, 1800);
+}
+
+// Loop every 4 seconds
+pulseCode();
+setInterval(pulseCode, 4000);
+
+// ─── FLOATING LABELS ─────────────────────────────────────────────
+const lbl1 = document.getElementById('lbl1');
+const lbl2 = document.getElementById('lbl2');
+const lbl3 = document.getElementById('lbl3');
+
+function positionLabel(lbl, x, y){
+  lbl.style.left = (x+20)+'px';
+  lbl.style.top  = (y-16)+'px';
+}
+function showLabel(lbl, x, y){
+  positionLabel(lbl,x,y);
+  lbl.classList.add('visible');
+}
+function hideLabel(lbl){
+  lbl.classList.remove('visible');
+}
+
+// Sequence labels with mouse position
+let labelPhase = 0;
+let labelTimer;
+
+function runLabelSequence(){
+  // Label 1: near dot
+  showLabel(lbl1, mx, my);
+  hideLabel(lbl2); hideLabel(lbl3);
+  labelTimer = setTimeout(()=>{
+    hideLabel(lbl1);
+    // Label 2: near ring
+    showLabel(lbl2, rx+20, ry-16);
+    setTimeout(()=>{
+      hideLabel(lbl2);
+      // Label 3: near first card
+      const c = cards[0].getBoundingClientRect();
+      showLabel(lbl3, c.left+c.width/2-60, c.top-40);
+      setTimeout(()=>{
+        hideLabel(lbl3);
+        setTimeout(runLabelSequence, 3000);
+      }, 2200);
+    }, 2200);
+  }, 2200);
+}
+
+// Start labels after 1.5s
+setTimeout(runLabelSequence, 1500);
+
+// Keep label1 tracking mouse while visible
+function trackLabel(){
+  if(lbl1.classList.contains('visible')) positionLabel(lbl1,mx,my);
+  if(lbl2.classList.contains('visible')) positionLabel(lbl2,rx+20,ry-16);
+  requestAnimationFrame(trackLabel);
+}
+requestAnimationFrame(trackLabel);
+
+// ─── DEMO AUTO-MOVE (ghost cursor) ───────────────────────────────
+// Synthetically move cursor for viewers who aren't moving their mouse
+let demoActive = false;
+let demoPhase  = 0;
+let demoT      = 0;
+let lastRealMove = Date.now();
+
+document.addEventListener('mousemove', ()=>{ lastRealMove = Date.now(); demoActive = false; });
+
+function demoStep(ts){
+  if(Date.now() - lastRealMove > 4000 && !demoActive){
+    demoActive = true; demoT = 0; demoPhase = 0;
+  }
+  if(demoActive){
+    demoT += 0.008;
+    const W = window.innerWidth, H = window.innerHeight;
+    let tx, ty;
+    const p = demoPhase % 4;
+    if(p===0){ // slow across
+      tx = W*0.15 + (W*0.7)*((demoT%1));
+      ty = H*0.4 + Math.sin(demoT*2)*40;
+    } else if(p===1){ // circles
+      tx = W/2 + Math.cos(demoT*3)*180;
+      ty = H/2 + Math.sin(demoT*3)*120;
+    } else if(p===2){ // hover card
+      const c = cards[demoT%1 < 0.5 ? 0 : demoT%1<0.75 ? 1 : 2].getBoundingClientRect();
+      tx = c.left+c.width/2; ty = c.top+c.height/2;
+    } else { // rapid left→right
+      tx = W*0.1 + (W*0.8)*Math.abs(Math.sin(demoT*1.5));
+      ty = H*0.55 + Math.sin(demoT)*30;
+    }
+    if(demoT > 4){ demoT=0; demoPhase++; }
+
+    // Simulate mouse at target
+    prevMx=mx; prevMy=my;
+    mx = tx; my = ty;
+    speed = Math.hypot(mx-prevMx,my-prevMy);
+    dot.style.transform = `translate3d(${mx-3}px,${my-3}px,0)`;
+    bgRad.style.background = `radial-gradient(600px at ${mx}px ${my}px, rgba(255,255,255,0.035) 0%, transparent 70%)`;
+
+    // Check hover
+    let anyHover=false;
+    cards.forEach(card=>{
+      const r=card.getBoundingClientRect();
+      if(mx>r.left&&mx<r.right&&my>r.top&&my<r.bottom){
+        anyHover=true;
+        if(!hovering){ hovering=true; ring.classList.add('hovering'); dot.classList.add('hovering'); }
+      }
+    });
+    if(!anyHover&&hovering){ hovering=false; ring.classList.remove('hovering'); dot.classList.remove('hovering'); }
+  }
+  requestAnimationFrame(demoStep);
+}
+requestAnimationFrame(demoStep);
+</script>
+</body>
+</html>
